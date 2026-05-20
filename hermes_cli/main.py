@@ -5511,6 +5511,13 @@ def cmd_status(args):
     show_status(args)
 
 
+def cmd_rusty(args):
+    """Run Rusty Agent bootstrap commands."""
+    from hermes_cli.rusty import run_rusty_command
+
+    run_rusty_command(args)
+
+
 def cmd_cron(args):
     """Cron job management."""
     from hermes_cli.cron import cron_command
@@ -9734,7 +9741,7 @@ _BUILTIN_SUBCOMMANDS = frozenset(
         "dump", "fallback", "gateway", "hooks", "import", "insights",
         "kanban", "login", "logout", "logs", "lsp", "mcp", "memory",
         "model", "pairing", "plugins", "postinstall", "profile", "proxy",
-        "send", "sessions", "setup",
+        "rusty", "send", "sessions", "setup",
         "skills", "slack", "status", "tools", "uninstall", "update",
         "version", "webhook", "whatsapp", "chat",
         # Help-ish invocations — plugin commands not being listed in
@@ -10411,6 +10418,56 @@ def main():
         "--deep", action="store_true", help="Run deep checks (may take longer)"
     )
     status_parser.set_defaults(func=cmd_status)
+
+    # =========================================================================
+    # rusty command
+    # =========================================================================
+    rusty_parser = subparsers.add_parser(
+        "rusty",
+        help="Rusty Agent bootstrap status",
+        description="Inspect the local Rusty Agent bootstrap lane",
+    )
+    rusty_subparsers = rusty_parser.add_subparsers(dest="rusty_command")
+    rusty_status = rusty_subparsers.add_parser(
+        "status",
+        help="Show Rusty Agent readiness state",
+        description="Show local Rusty Agent readiness without mutating anything",
+    )
+    rusty_status.add_argument(
+        "--portal-url",
+        help="Override Agent Portal base URL (default: RGP_AGENT_PORTAL_URL or 127.0.0.1:8788)",
+    )
+    rusty_status.add_argument(
+        "--skillnasium-url",
+        help="Override Skillnasium base URL (default: RGP_SKILLNASIUM_URL or 127.0.0.1:8765)",
+    )
+    rusty_status.add_argument(
+        "--json",
+        action="store_true",
+        help="Emit machine-readable JSON for control-plane integrations",
+    )
+    rusty_status.add_argument(
+        "--no-portal-probe",
+        action="store_true",
+        help="Skip probing Agent Portal; useful when Agent Portal is calling this command",
+    )
+    rusty_status.set_defaults(func=cmd_rusty)
+    rusty_portal = rusty_subparsers.add_parser(
+        "portal",
+        help="Show Agent Portal mission package",
+        description="Read the RGP Agent Portal mission package without mutating anything",
+    )
+    rusty_portal.add_argument(
+        "--portal-url",
+        help="Override Agent Portal base URL (default: RGP_AGENT_PORTAL_URL or 127.0.0.1:8788)",
+    )
+    rusty_portal.add_argument(
+        "--json",
+        action="store_true",
+        help="Emit the raw machine-readable portal package JSON",
+    )
+    rusty_portal.set_defaults(func=cmd_rusty)
+    rusty_parser.set_defaults(func=cmd_rusty)
 
     # =========================================================================
     # cron command
