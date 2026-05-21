@@ -23,9 +23,11 @@ Env var fallbacks (used when the corresponding arg is not passed):
 from __future__ import annotations
 
 import logging
+import json
 import os
 import sys
 from contextlib import redirect_stderr, redirect_stdout
+from pathlib import Path
 from typing import Optional
 
 
@@ -333,7 +335,54 @@ def _run_agent(
     agent.stream_delta_callback = None
     agent.tool_gen_callback = None
 
-    return agent.chat(prompt) or ""
+    result = agent.run_conversation(prompt)
+    _write_oneshot_summary(agent, result)
+    return str(result.get("final_response") or "")
+
+
+def _write_oneshot_summary(agent, result: dict) -> None:
+    """Optionally write a machine-readable summary for embedding launchers.
+
+    Normal oneshot stdout stays final-response-only. Control planes such as
+    Agent Portal can opt into this sidecar file with HERMES_ONESHOT_SUMMARY_PATH.
+    """
+    summary_path = os.getenv("HERMES_ONESHOT_SUMMARY_PATH", "").strip()
+    if not summary_path:
+        return
+    path = Path(summary_path)
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        usage = {
+            "input_tokens": int(result.get("input_tokens") or 0),
+            "output_tokens": int(result.get("output_tokens") or 0),
+            "cache_read_tokens": int(result.get("cache_read_tokens") or 0),
+            "cache_write_tokens": int(result.get("cache_write_tokens") or 0),
+            "reasoning_tokens": int(result.get("reasoning_tokens") or 0),
+            "prompt_tokens": int(result.get("prompt_tokens") or 0),
+            "completion_tokens": int(result.get("completion_tokens") or 0),
+            "total_tokens": int(result.get("total_tokens") or 0),
+            "last_prompt_tokens": int(result.get("last_prompt_tokens") or 0),
+            "estimated": int(result.get("total_tokens") or 0) <= 0,
+        }
+        payload = {
+            "schema_version": "hermes.oneshot.summary.v1",
+            "session_id": getattr(agent, "session_id", ""),
+            "model": result.get("model") or getattr(agent, "model", ""),
+            "provider": result.get("provider") or getattr(agent, "provider", ""),
+            "base_url": result.get("base_url") or getattr(agent, "base_url", ""),
+            "api_calls": int(result.get("api_calls") or 0),
+            "completed": bool(result.get("completed")),
+            "turn_exit_reason": result.get("turn_exit_reason") or "",
+            "usage": usage,
+            "estimated_cost_usd": result.get("estimated_cost_usd"),
+            "cost_status": result.get("cost_status") or "",
+            "cost_source": result.get("cost_source") or "",
+        }
+        temp_path = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+        temp_path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+        temp_path.replace(path)
+    except Exception:
+        logging.debug("Failed to write oneshot summary sidecar", exc_info=True)
 
 
 def _oneshot_clarify_callback(question: str, choices=None) -> str:
